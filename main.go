@@ -16,7 +16,7 @@ type Room struct {
 
 var (
 	antsNumber int
-	data string
+	originalRooms = make(map[string]Room)
 	Rooms = make(map[string]Room)
 	start string
 	end string
@@ -25,14 +25,21 @@ var (
 )
 
 func main() {
-	dataBytes, err := os.ReadFile(os.Args[1])
+	args := os.Args[1:]
+    if len(args) != 1 {
+        return
+    }
+
+    dataBytes, err := os.ReadFile(args[0])
 	if err != nil {
 		fmt.Println("ERROR: invalid data format;", err)
 		return
 	}
 
-	data = string(dataBytes)
-	err = ParsingData(data, true)
+	err = ParsingData(string(dataBytes))
+
+
+	originalRooms = copyRoomsMap(Rooms)
 	if err != nil {
 		fmt.Println("ERROR: invalid data format;", err)
 		return
@@ -58,7 +65,7 @@ func main() {
 		}
 	}
 
-	HandleExport(antsOrdred,lessTurns,shortestPathIndex)
+	HandleExport(antsOrdred,lessTurns,shortestPathIndex, string(dataBytes))
 	fmt.Println()
 }
 
@@ -116,15 +123,12 @@ func FindValidPaths() {
 		
 			validPaths = [][]string{}
 
-			Rooms = make(map[string]Room)
-	
-			
-			err := ParsingData(data, false)
-			if err != nil {
-				fmt.Println("ERROR: invalid data format;", err)
-				os.Exit(0)
-			}
-
+			Rooms = copyRoomsMap(originalRooms)
+			// real    3m14.442s
+			// user    5m42.522s
+			// sys     0m13.767s
+			// Rooms = make(map[string]Room)
+			// ParsingData(data, false)
 
 			for rev, links := range linksToRemove {
 				for _, toRm := range links {
@@ -206,6 +210,26 @@ func removeLink(links []string, conflictRoom string) []string {
 	return links
 }
 
+
+// Helper function to deep copy a map of Room structs
+func copyRoomsMap(original map[string]Room) map[string]Room {
+    copied := make(map[string]Room)
+
+    for key, room := range original {
+        // Deep copy the links slice
+        newLinks := make([]string, len(room.links))
+        copy(newLinks, room.links)
+
+        // Create a new Room struct with the copied slice
+        copied[key] = Room{
+            links:        newLinks,
+            isChecked:    room.isChecked,
+            beforeInPath: room.beforeInPath,
+        }
+    }
+
+    return copied
+}
 func bfs() (bool) {
 
 
@@ -293,111 +317,119 @@ func resetIsChecked() {
 	}
 }
 
-
-func ParsingData(str string, firstExecution bool) error {
+func ParsingData(str string) error {
     var err error
-    romeCordinations := make(map[string]string)
-    startFound, endFound := false, false
+    roomCordinations := make(map[string]bool)
 
     split := strings.Split(str, "\n")
-	
-	if firstExecution {
-		antsNumber, err = strconv.Atoi(split[0])
-		if  err != nil || antsNumber <= 0 {
-			return fmt.Errorf("ERROR: invalid number of ants")
-		}
+	roomNames := make(map[string]bool)
+
+	antsNumber, err = strconv.Atoi(split[0])
+	if  err != nil || antsNumber <= 0 {
+		return fmt.Errorf("ERROR: invalid number of ants")
 	}
 
     for i:= 1; i < len(split); i++ {
-        if firstExecution {
-             if  len(strings.Split(split[i], " ")) == 3 {
-                    spacesplit := strings.Split(split[i], " ")
-                    if _, err = strconv.Atoi(spacesplit[1]); err != nil {
-                        return fmt.Errorf("ERROR: invalid coordinates for room at line %d", i+1)
-                    }
-                    if _, err = strconv.Atoi(spacesplit[2]); err != nil {
-                        return fmt.Errorf("ERROR: invalid coordinates for room at line %d", i+1)
-                    }
-                    _, exist := romeCordinations[strings.Join(spacesplit[1:], " ")]
-                    if exist {
-                        return fmt.Errorf("ERROR: duplicate coordinates for room at line %d", i+1)
-                    }
-                    romeCordinations[strings.Join(spacesplit[1:], " ")] = spacesplit[0]
+             if  spacesplit := strings.Split(split[i], " "); len(spacesplit) == 3 {
+				
+				err := checkIsValideRoomInitialisation(roomNames, roomCordinations,spacesplit,i)
+				if err != nil {
+					return err
+				}
+				
             } else if split[i] == "##start" {
-                if startFound {
+				if i+1 >= len(split) {
+                    return fmt.Errorf("ERROR: start-flag trailling in the end at line %d", i+1)
+                }
+
+                if start != "" {
                     return fmt.Errorf("ERROR: multiple ##start found at line %d", i+1)
                 }
-                startFound = true
-                start = strings.Split(split[i+1], " ")[0]
-                spacesplit := strings.Split(split[i+1], " ")
-                romeCordinations[strings.Join(spacesplit[1:], " ")] = spacesplit[0]
+				spacesplit := strings.Split(split[i+1], " ")
+				
+				err := checkIsValideRoomInitialisation(roomNames, roomCordinations,spacesplit,i+1)
+				if err != nil {
+					return err
+				}
+                start = spacesplit[0]
                 i++
                 
             } else if  split[i] == "##end" {
-                if endFound {
+                if i+1 >= len(split) {
+                    return fmt.Errorf("ERROR: end-flag trailling in the end at line %d", i+1)
+                }
+                
+				if end != "" {
                     return fmt.Errorf("ERROR: multiple ##end found at line %d", i+1)
                 }
-                endFound = true
-                end = strings.Split(split[i+1], " ")[0]
-                spacesplit := strings.Split(split[i+1], " ")
-                romeCordinations[strings.Join(spacesplit[1:], " ")] = spacesplit[0]
-                i++
+				spacesplit := strings.Split(split[i+1], " ")
+
+                end = spacesplit[0]    
+				if len(spacesplit) != 3 {
+                    return fmt.Errorf("ERROR: No valid room initialization after start flag at line %d", i+1)
+				}
+				
+				err := checkIsValideRoomInitialisation(roomNames, roomCordinations,spacesplit,i+1)
+				if err != nil {
+					return err
+				}
+                roomCordinations[strings.Join(spacesplit[1:], " ")] = true
+				i++
+				
             } else if strings.HasPrefix(split[i], "#") {
                 continue
-            } else if len(strings.Split(split[i], "-")) == 2 {
+            } else if dashSplit := strings.Split(split[i], "-"); len(dashSplit) == 2 {
+				if !roomNames[dashSplit[0]] || !roomNames[dashSplit[1]] {
+                    return fmt.Errorf("ERROR: Trying linking an non-initialized room at line %d", i+1)
+				}
                 if err := fillRoomData(split[i]); err != nil {
-                    return fmt.Errorf("ERROR: invalid link format at line %d", i+1)
+                    return fmt.Errorf("ERROR: invaliCd link format at line %d", i+1)
                 }
             } else if split[i] == "" {
                 continue
             } else {
                 fmt.Println("ERROR: invalid data format, at line "+strconv.Itoa(i+1))
                 os.Exit(0)
-            }
-        } else {
-            if  len(strings.Split(split[i], " ")) == 3  {
-                continue
-            }else if len(strings.Split(split[i], " ")) == 3 {
-                continue
-            } else if split[i] == "##start" {
-                start = strings.Split(split[i+1], " ")[0]
-                i++
-            } else if  split[i] == "##end" {
-                end = strings.Split(split[i+1], " ")[0]
-                i++
-            } else if strings.HasPrefix(split[i], "#") {
-                continue
-            } else if len(strings.Split(split[i], "-")) == 2 {
-                fillRoomData(split[i])
-            } else if split[i] == "" {
-                continue
-            } else {
-                fmt.Println("ERROR: invalid data format, at line "+strconv.Itoa(i+1))
-                os.Exit(0)
-            }
-        }
-        
-    }
-    if firstExecution {
-		if (!startFound || !endFound) {
-			return fmt.Errorf("ERROR: missing start or end room")
-		} else if start == end {
-			return fmt.Errorf("ERROR: invalide start and end rooms")
-		}
+            }   
     }
 
-    if firstExecution {
-        fmt.Println(str)
-        fmt.Println()
-    }
+	if (start == "" || end == "") {
+		return fmt.Errorf("ERROR: missing start or end room;")
+	} else if start == end {
+		return fmt.Errorf("ERROR: start is end;")
+	}
     return nil
+}
+
+func checkIsValideRoomInitialisation(roomNames map[string]bool, roomCordinations map[string]bool, spaceSplit []string, i int) error {
+	var err error
+	
+	if roomNames[spaceSplit[0]] {
+		return fmt.Errorf("ERROR: Duplicated room initialazation %d", i+1)
+	}
+	roomNames[spaceSplit[0]] = true
+
+	if _, err = strconv.Atoi(spaceSplit[1]); err != nil {
+		return fmt.Errorf("ERROR: invalid coordinates for room at line %d", i+1)
+	}
+	
+	if _, err = strconv.Atoi(spaceSplit[2]); err != nil {
+		return fmt.Errorf("ERROR: invalid coordinates for room at line %d", i+1)
+	}
+
+	if roomCordinations[strings.Join(spaceSplit[1:], " ")] {
+		return fmt.Errorf("ERROR: duplicate coordinates for room at line %d", i+1)
+	}
+
+	roomCordinations[strings.Join(spaceSplit[1:], " ")] = true
+	return nil
 }
 
 func fillRoomData(str string) error {
     split := strings.Split(str, "-")
 
     if split[0] == split[1] {
-        return fmt.Errorf("room %s cannot link to itself", split[0])
+        return fmt.Errorf("room %s can't link to itself", split[0])
     }
 
     for _, link := range Rooms[split[0]].links {
@@ -422,20 +454,23 @@ func fillRoomData(str string) error {
     return nil
 }
 
-func HandleExport(ants []int, turns int, shortestPathIndex int) {
+func HandleExport(ants []int, turns int, shortestPathIndex int, originalData string) {
+
+	fmt.Println(originalData+"\n")
+
     var result = make([]string, turns, turns)
     AntsMoved := 1
 
      for i,Ants := range ants {
-            for j:= 0 ; j < Ants; j++{
-                for k, room:= range allValidPaths[shortestPathIndex][i][1:] {
-					if result[k+j] != "" {
-						result[k+j] += " "
-					}
-                    result[k+j] += "L"+strconv.Itoa(AntsMoved)+"-"+room
-                }
-                AntsMoved++
-            }
+		for j:= 0 ; j < Ants; j++{
+			for k, room:= range allValidPaths[shortestPathIndex][i][1:] {
+				if result[k+j] != "" {
+					result[k+j] += " "
+				}
+				result[k+j] += "L"+strconv.Itoa(AntsMoved)+"-"+room
+			}
+			AntsMoved++
+		}
     }
     fmt.Print(strings.Join(result, "\n"))
 }
