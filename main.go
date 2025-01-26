@@ -25,21 +25,27 @@ var (
 )
 
 func main() {
-	dataBytes, _ := os.ReadFile(os.Args[1])
-	data = string(dataBytes)
-	err := ParsingData(data, true)
+	dataBytes, err := os.ReadFile(os.Args[1])
+	if err != nil {
+		fmt.Println("ERROR: invalid data format;", err)
+		return
+	}
 
-	fmt.Println(err)
+	data = string(dataBytes)
+	err = ParsingData(data, true)
+	if err != nil {
+		fmt.Println("ERROR: invalid data format;", err)
+		return
+	}
+
 	FindValidPaths()
 	allValidPaths = append(allValidPaths, validPaths)
-	fmt.Println("len final paths :", len(validPaths))
 
 	// Sorting strings by length
 	sort.Slice(validPaths, func(i, j int) bool {
 		return len(validPaths[i]) < len(validPaths[j])
 	})
 
-	fmt.Println(allValidPaths)
 	shortestPathIndex := 0
 	lessTurns, antsOrdred := orderAnts(0)
 
@@ -51,8 +57,9 @@ func main() {
 			shortestPathIndex = i
 		}
 	}
-	// fmt.Println(allValidPaths)
-	fmt.Println("Final : OrdredAnts", antsOrdred, " - turns :", lessTurns, allValidPaths[shortestPathIndex])
+
+	HandleExport(antsOrdred,lessTurns,shortestPathIndex)
+	fmt.Println()
 }
 
 func orderAnts(indexValidPaths int) (int, []int) {
@@ -82,14 +89,10 @@ func orderAnts(indexValidPaths int) (int, []int) {
 	}
 
 
-
-
-	fmt.Println("OrdredAnts", ants, " - turns :", shortestPathLen-1, foundPath)
 	return shortestPathLen-1, ants
 }
 
 func FindValidPaths() {
-	
 
 	linksToRemove := make(map[string][]string)
 
@@ -115,8 +118,12 @@ func FindValidPaths() {
 
 			Rooms = make(map[string]Room)
 	
+			
 			err := ParsingData(data, false)
-			fmt.Println(err)
+			if err != nil {
+				fmt.Println("ERROR: invalid data format;", err)
+				os.Exit(0)
+			}
 
 
 			for rev, links := range linksToRemove {
@@ -139,7 +146,7 @@ func FindValidPaths() {
 	}
 
 	if len(validPaths) == 0 {
-		fmt.Println("ERROR: invalid data format---")
+		fmt.Println("ERROR: invalid data format; No valid paths found!")
 		os.Exit(0)
 	}
 }
@@ -286,45 +293,20 @@ func resetIsChecked() {
 	}
 }
 
-// func ParsingData(str string) any {
-// 	var err error
-// 	split := strings.Split(str, "\n")
-// 	if antsNumber, err = strconv.Atoi(split[0]); err != nil  {
-// 		fmt.Println("ERROR: invalid data format")
-// 		os.Exit(0)
-// 	}
-// 	for i:= 1; i < len(split); i++ {
-// 		if len(strings.Split(split[i], " ")) == 3 {
-// 			continue
-// 		} else if split[i] == "##start" {
-// 			start = strings.Split(split[i+1], " ")[0]
-// 			i++
-// 		} else if  split[i] == "##end" {
-// 			end = strings.Split(split[i+1], " ")[0]
-// 			i++
-// 		} else if strings.HasPrefix(split[i], "#") {
-// 			continue
-// 		} else if len(strings.Split(split[i], "-")) == 2 {
-// 			fillRoomData(split[i])
-// 		} else if split[i] == "" {
-// 			continue
-// 		} else {
-// 			fmt.Println("ERROR: invalid data format, at line "+strconv.Itoa(i+1))
-// 			os.Exit(0)
-// 		}
-// 	}
-// 	return nil
-// }
 
-func ParsingData(str string, firstExecution bool) any {
+func ParsingData(str string, firstExecution bool) error {
     var err error
     romeCordinations := make(map[string]string)
     startFound, endFound := false, false
 
     split := strings.Split(str, "\n")
-    if antsNumber, err = strconv.Atoi(split[0]); err != nil || antsNumber <= 0 {
-        return fmt.Errorf("ERROR: invalid number of ants")
-    }
+	
+	if firstExecution {
+		antsNumber, err = strconv.Atoi(split[0])
+		if  err != nil || antsNumber <= 0 {
+			return fmt.Errorf("ERROR: invalid number of ants")
+		}
+	}
 
     for i:= 1; i < len(split); i++ {
         if firstExecution {
@@ -396,9 +378,14 @@ func ParsingData(str string, firstExecution bool) any {
         }
         
     }
-    if firstExecution && (!startFound || !endFound) {
-        return fmt.Errorf("ERROR: missing start or end room")
+    if firstExecution {
+		if (!startFound || !endFound) {
+			return fmt.Errorf("ERROR: missing start or end room")
+		} else if start == end {
+			return fmt.Errorf("ERROR: invalide start and end rooms")
+		}
     }
+
     if firstExecution {
         fmt.Println(str)
         fmt.Println()
@@ -434,22 +421,21 @@ func fillRoomData(str string) error {
 
     return nil
 }
-// func fillRoomData(str string) error {
-// 	split := strings.Split(str, "-")
 
-	
+func HandleExport(ants []int, turns int, shortestPathIndex int) {
+    var result = make([]string, turns, turns)
+    AntsMoved := 1
 
-// 	if (split[0] == start && split[1] == end) || (split[0] == end && split[1] == start) {
-// 		validPaths = [][]string{{start, end}}
-// 		return nil
-// 	}
-
-// 	room := Rooms[split[0]]
-// 	room.links = append(room.links, split[1])
-// 	Rooms[split[0]] = room
-
-// 	room = Rooms[split[1]]
-// 	room.links = append(room.links, split[0])
-// 	Rooms[split[1]] = room
-// 	return nil
-// }
+     for i,Ants := range ants {
+            for j:= 0 ; j < Ants; j++{
+                for k, room:= range allValidPaths[shortestPathIndex][i][1:] {
+					if result[k+j] != "" {
+						result[k+j] += " "
+					}
+                    result[k+j] += "L"+strconv.Itoa(AntsMoved)+"-"+room
+                }
+                AntsMoved++
+            }
+    }
+    fmt.Print(strings.Join(result, "\n"))
+}
