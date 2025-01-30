@@ -1,3 +1,0 @@
-should add if bfs has not found any paths and no 
-collisitons (revNode == "" && toRemove == "") 
-then break at line 40
